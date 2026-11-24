@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================
+// ENUMS
+// =====================================
+
+enum Role {
+  STUDENT
+  MENTOR
+  ADMIN
+}
+
+enum TopicLevel {
+  DOMAIN
+  CATEGORY
+  TOPIC
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  BOOKED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  PAYMENT_FAILED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum MentorPayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  ON_HOLD
+}
+
+// =====================================
+// USER
+// =====================================
+
+model User {
+  id               String  @id @default(cuid())
+  name             String
+  email            String  @unique
+  passwordHash     String?
+  googleId         String? @unique
+  role             Role    @default(STUDENT)
+  refreshTokenHash String?
+
+  isActive Boolean @default(true)
+
+  bookings Booking[]
+
+  studentProfile StudentProfile?
+  mentorProfile  MentorProfile?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@map("users")
+}
+
+// =====================================
+// STUDENT PROFILE
+// =====================================
+
+model StudentProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  educationLevel String?
+  institution    String?
+  bio            String?
+  learningGoal   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("student_profiles")
+}
+
+// =====================================
+// MENTOR PROFILE
+// =====================================
+
+model MentorProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  headline          String?
+  bio               String?
+  yearsOfExperience Int     @default(0)
+  isVerified        Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expertise      MentorExpertise[]
+  availabilities Availability[]
+  payouts        MentorPayout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("mentor_profiles")
+}
+
+// =====================================
+// TOPIC HIERARCHY
+// DOMAIN -> CATEGORY -> TOPIC
+// =====================================
+
+model Topic {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  level       TopicLevel
+
+  parentId String?
+
+  parent   Topic?  @relation("TopicHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Topic[] @relation("TopicHierarchy")
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  mentorExpertise MentorExpertise[]
+  availabilities  Availability[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([level, isActive])
+  @@map("topics")
+}
+
+// =====================================
+// MENTOR EXPERTISE
+// =====================================
+
+model MentorExpertise {
+  id              String @id @default(cuid())
+  mentorProfileId String
+  topicId         String
+
+  mentorProfile MentorProfile @relation(fields: [mentorProfileId], references: [id], onDelete: Cascade)
+  topic         Topic         @relation(fields: [topicId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([mentorProfileId, topicId])
+  @@index([topicId])
+  @@map("mentor_expertise")
+}
+
+// =====================================
+// MENTOR AVAILABILITY
+// ONE SLOT = ONE TOPIC = ONE SESSION
+// =====================================
+
+model Availability {
+  id              String @id @default(cuid())
+  mentorProfileId String
+  topicId         String
+
+  startAt DateTime
+  endAt   DateTime
+
+  // Price for this individual session
+  sessionFee Decimal @db.Decimal(10, 2)
+  currency   String  @default("INR")
+
+  status AvailabilityStatus @default(AVAILABLE)
+
+  mentorProfile MentorProfile @relation(fields: [mentorProfileId], references: [id], onDelete: Cascade)
+  topic         Topic         @relation(fields: [topicId], references: [id], onDelete: Restrict)
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([topicId, status, startAt])
+  @@index([mentorProfileId, startAt])
+  @@map("availabilities")
+}
+
+// =====================================
+// BOOKING
+// =====================================
+
+model Booking {
+  id             String @id @default(cuid())
+  studentId      String
+  availabilityId String
+
+  // Price snapshot at booking time
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("INR")
+
+  status BookingStatus @default(PENDING_PAYMENT)
+
+  expiresAt DateTime?
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  availability Availability @relation(fields: [availabilityId], references: [id], onDelete: Restrict)
+
+  payments     Payment[]
+  mentorPayout MentorPayout?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, status, createdAt])
+  @@index([availabilityId])
+  @@index([status, expiresAt])
+  @@map("bookings")
+}
+
+// =====================================
+// PAYMENT
+// ONE BOOKING CAN HAVE MULTIPLE ATTEMPTS
+// =====================================
+
+
+model Payment {
+  id        String @id @default(cuid())
+  bookingId String
+
+  provider PaymentProvider @default(RAZORPAY)
+  // Idempotency
+  idempotencyKey String @unique
+
+  // Razorpay identifiers
+  providerOrderId   String? @unique
+  providerPaymentId String? @unique
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("INR")
+
+  status PaymentStatus @default(CREATED)
+
+  // Payment signature verification
+  signatureVerifiedAt DateTime?
+
+  // Refund tracking
+  refundedAmount Decimal   @default(0) @db.Decimal(10, 2)
+  refundedAt     DateTime?
+
+  failureCode    String?
+  failureMessage String?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId, status])
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+
+// =====================================
+// MENTOR PAYOUT
+// ONE PAYOUT RECORD PER BOOKING
+// =====================================
+
+model MentorPayout {
+  id              String @id @default(cuid())
+  bookingId       String
+  mentorProfileId String
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("INR")
+
+  status MentorPayoutStatus @default(PENDING)
+
+  // External payout reference
+  providerTransferId String? @unique
+
+  paidAt        DateTime?
+  failureReason String?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  mentorProfile MentorProfile @relation(fields: [mentorProfileId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId])
+  @@index([mentorProfileId, status])
+  @@index([status, createdAt])
+  @@map("mentor_payouts")
+}
+
+// =====================================
+// PAYMENT WEBHOOK EVENTS
+// IDEMPOTENT WEBHOOK PROCESSING
+// =====================================
+
+model PaymentWebhookEvent {
+  id String @id @default(cuid())
+
+  providerEventId String @unique
+  eventType       String
+
+  payload Json
+
+  processedAt     DateTime?
+  processingError String?
+
+  createdAt DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@map("payment_webhook_events")
+}
