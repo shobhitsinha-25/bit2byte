@@ -1,7 +1,6 @@
 import {
   Users,
   CalendarDays,
-  Clock3,
   IndianRupee,
   ArrowUpRight,
   Video,

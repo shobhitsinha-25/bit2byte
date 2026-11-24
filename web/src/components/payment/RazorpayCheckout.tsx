@@ -1,6 +1,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import axios from "axios";
 
 import { createPaymentOrder } from "../../services/payment.api";
 import { loadRazorpayScript } from "../../services/razorpay-checkout";
@@ -9,6 +10,20 @@ interface RazorpayCheckoutProps {
   bookingId: string;
   studentName?: string;
   studentEmail?: string;
+}
+
+interface RazorpayPaymentFailure {
+  error?: {
+    code?: string;
+    description?: string;
+    reason?: string;
+    source?: string;
+    step?: string;
+    metadata?: {
+      order_id?: string;
+      payment_id?: string;
+    };
+  };
 }
 
 const RazorpayCheckout = ({
@@ -65,7 +80,7 @@ const RazorpayCheckout = ({
       const order = orderResponse.data;
 
       // 4. Configure Razorpay Checkout.
-      const options: RazorpayOptions = {
+      const options: RazorpayCheckoutOptions = {
         key: order.keyId,
         amount: order.amount,
         currency: order.currency,
@@ -92,16 +107,15 @@ const RazorpayCheckout = ({
             "Payment submitted. Waiting for server verification."
           );
 
+          // Server-side payment verification will be handled separately.
           // Keep the idempotency key until payment is resolved.
-          // Server-side verification will be integrated separately.
         },
 
         modal: {
           ondismiss: () => {
             console.log("Razorpay Checkout closed");
 
-            // Do not remove the key.
-            // A retry must reuse the same key.
+            // Keep the same key for a retry.
           },
         },
       };
@@ -109,25 +123,46 @@ const RazorpayCheckout = ({
       // 5. Open Razorpay Checkout.
       const razorpay = new window.Razorpay(options);
 
-      razorpay.on("payment.failed", (response) => {
-        console.error("Payment failed:", response.error);
+      // 6. Handle payment failure safely.
+      razorpay.on("payment.failed", (response: unknown) => {
+        if (
+          typeof response !== "object" ||
+          response === null ||
+          !("error" in response)
+        ) {
+          console.error("Unknown Razorpay payment failure:", response);
+          toast.error("Payment failed. Please try again.");
+          return;
+        }
+
+        const failure = response as RazorpayPaymentFailure;
+        const description = failure.error?.description;
+
+        console.error("Payment failed:", failure.error);
 
         toast.error(
-          response.error.description || "Payment failed"
+          description || "Payment failed. Please try again."
         );
 
-        // Keep the same key for a retry of this attempt.
+        // Keep the same idempotency key for a retry.
       });
 
       razorpay.open();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Payment initialization error:", error);
 
-      toast.error(
-        error.response?.data?.message ||
+      let message = "Unable to initialize payment";
+
+      if (axios.isAxiosError(error)) {
+        message =
+          error.response?.data?.message ||
           error.message ||
-          "Unable to initialize payment"
-      );
+          message;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      toast.error(message);
     } finally {
       setLoading(false);
     }
