@@ -94,44 +94,44 @@ export const registerUser = async (data: RegisterInput) => {
 
   const passwordHash = await bcrypt.hash(data.password, 12);
 
-  const user = await prisma.$transaction(async (tx) => {
-    return tx.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        passwordHash,
-        role: data.role,
+ const user = await prisma.$transaction(async (tx) => {
+  return tx.user.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      passwordHash,
+      role: data.role,
 
-        ...(data.role === "STUDENT"
-          ? {
-              studentProfile: {
-                create: {
-                  educationLevel: data.educationLevel,
-                  institution: data.institution,
-                  bio: data.bio,
-                },
+      ...(data.role === "STUDENT"
+        ? {
+            studentProfile: {
+              create: {
+                educationLevel: data.educationLevel ?? null,
+                institution: data.institution ?? null,
+                bio: data.bio ?? null,
               },
-            }
-          : {
-              mentorProfile: {
-                create: {
-                  headline: data.headline,
-                  bio: data.bio,
-                  yearsOfExperience: data.yearsOfExperience ?? 0,
-                  hourlyRate: data.hourlyRate!,
-                },
+            },
+          }
+        : {
+            mentorProfile: {
+              create: {
+                headline: data.headline ?? null,
+                bio: data.bio ?? null,
+                yearsOfExperience: data.yearsOfExperience ?? 0,
+                hourlyRate: data.hourlyRate!,
               },
-            }),
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        createdAt: true,
-      },
-    });
+            },
+          }),
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
   });
+});
 
   // Create the same authenticated session used by login.
   const session = await createUserSession(user);

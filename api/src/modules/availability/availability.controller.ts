@@ -175,6 +175,14 @@ export const getAvailabilityById = async (
   try {
     const userId = req.user!.id;
     const availabilityId = req.params.id;
+    
+
+if (typeof availabilityId !== "string") {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid availability ID",
+  });
+}
 
     if (!availabilityId) {
       return res.status(400).json({
@@ -222,15 +230,14 @@ export const updateAvailability = async (
     }
 
     const userId = req.user!.id;
-    const availabilityId = req.params.id;
+const availabilityId = req.params.id;
 
-    if (!availabilityId) {
-      return res.status(400).json({
-        success: false,
-        message: "Availability ID is required",
-      });
-    }
-
+if (typeof availabilityId !== "string" || !availabilityId) {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid availability ID",
+  });
+}
     const availability =
       await availabilityService.updateAvailability(
         userId,
@@ -261,14 +268,14 @@ export const cancelAvailability = async (
 ) => {
   try {
     const userId = req.user!.id;
-    const availabilityId = req.params.id;
+const availabilityId = req.params.id;
 
-    if (!availabilityId) {
-      return res.status(400).json({
-        success: false,
-        message: "Availability ID is required",
-      });
-    }
+if (typeof availabilityId !== "string" || !availabilityId) {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid availability ID",
+  });
+}
 
     const availability =
       await availabilityService.cancelAvailability(
