@@ -13,12 +13,18 @@ import {
 // COOKIE CONFIGURATION
 // =====================================
 
+// =====================================
+// COOKIE CONFIGURATION
+// =====================================
+
 const isProduction = process.env.NODE_ENV === "production";
 
 const refreshCookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: "lax" as const,
+  sameSite: (isProduction ? "none" : "lax") as
+    | "none"
+    | "lax",
   path: "/api/auth",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
@@ -31,7 +37,7 @@ const clearRefreshCookie = (res: Response) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: isProduction,
-    sameSite: "lax",
+    sameSite: isProduction ? "none" : "lax",
     path: "/api/auth",
   });
 };
